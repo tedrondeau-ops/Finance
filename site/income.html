@@ -30,9 +30,15 @@
       <p class="muted" id="window-note"></p>
       <div class="callout" id="runrate-callout"></div>
 
-      <div class="card">
-        <h2>Dividends by Month</h2>
-        <div id="div-chart"></div>
+      <div class="grid-2">
+        <div class="card">
+          <h2>Income Composition</h2>
+          <div id="income-donut"></div>
+        </div>
+        <div class="card">
+          <h2>Dividends by Month</h2>
+          <div id="div-chart"></div>
+        </div>
       </div>
 
       <div class="card">
@@ -72,11 +78,21 @@
 
   <script type="module">
     import { getData, fmtMoney, fmtPct, gainClass, sortable } from './assets/app.js';
-    import { renderBarChart } from './assets/charts.js';
+    import { renderBarChart, renderDonut, seriesColor } from './assets/charts.js';
 
     const data = await getData();
     const inc = data.income;
     const trailingIncome = inc.dividends.total + inc.optionPremium.total + inc.returnOfCapital.total + inc.interest.total;
+
+    const compositionSegments = [
+      { label: 'Dividends', value: inc.dividends.total, color: seriesColor(0) },
+      { label: 'Option Premium', value: inc.optionPremium.total, color: seriesColor(1) },
+      { label: 'Return of Capital', value: inc.returnOfCapital.total, color: seriesColor(2) },
+      { label: 'Interest', value: inc.interest.total, color: seriesColor(3) },
+    ].filter(s => s.value > 0);
+    renderDonut(document.getElementById('income-donut'), compositionSegments, {
+      centerLabel: fmtMoney(trailingIncome), centerSub: 'Total Generated',
+    });
 
     const from = new Date(inc.window.from), to = new Date(inc.window.to);
     const days = Math.max(1, Math.round((to - from) / 86400000) + 1);
@@ -84,9 +100,9 @@
 
     document.getElementById('stat-row').innerHTML = `
       <div class="stat-tile"><div class="label">Dividends Received</div><div class="value pos">${fmtMoney(inc.dividends.total)}</div></div>
-      <div class="stat-tile"><div class="label">Option Premium (net)</div><div class="value pos">${fmtMoney(inc.optionPremium.total)}</div></div>
-      <div class="stat-tile"><div class="label">Return of Capital</div><div class="value">${fmtMoney(inc.returnOfCapital.total)}</div></div>
-      <div class="stat-tile"><div class="label">Total Generated</div><div class="value pos">${fmtMoney(trailingIncome)}</div></div>
+      <div class="stat-tile accent-2"><div class="label">Option Premium (net)</div><div class="value pos">${fmtMoney(inc.optionPremium.total)}</div></div>
+      <div class="stat-tile accent-3"><div class="label">Return of Capital</div><div class="value">${fmtMoney(inc.returnOfCapital.total)}</div></div>
+      <div class="stat-tile accent-4"><div class="label">Total Generated</div><div class="value pos">${fmtMoney(trailingIncome)}</div></div>
       <div class="stat-tile"><div class="label">Annualized Run-Rate</div><div class="value">${fmtMoney(runRate)}/yr</div></div>
     `;
     document.getElementById('window-note').textContent = `Based on transaction history from ${inc.window.from} to ${inc.window.to} (${days} days).`;

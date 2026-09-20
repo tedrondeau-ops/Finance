@@ -28,9 +28,16 @@
     <div class="page">
       <div class="stat-row" id="stat-row"></div>
 
-      <div class="card">
-        <h2>Allocation by Category</h2>
-        <div id="allocation"></div>
+      <div class="grid-2">
+        <div class="card">
+          <h2>Allocation by Category</h2>
+          <div id="allocation"></div>
+        </div>
+        <div class="card" id="goal-card">
+          <h2>Goal Progress</h2>
+          <div id="goal-gauge" style="display:flex;justify-content:center;"></div>
+          <p class="muted" id="goal-note" style="text-align:center;"></p>
+        </div>
       </div>
 
       <div class="card">
@@ -61,7 +68,7 @@
 
   <script type="module">
     import { getData, fmtMoney, fmtPct, gainClass, sortable } from './assets/app.js';
-    import { renderStackedBar, renderLineChart, seriesColor } from './assets/charts.js';
+    import { renderDonut, renderLineChart, renderGauge, seriesColor } from './assets/charts.js';
 
     const CATEGORY_ORDER = ['Cash','Income & Dividend','Energy','Nuclear & Power','AI & Data Infrastructure','Biotech & Pharma','Materials & Industrial','Digital Assets','Mobility','Uncategorized'];
     function colorForCategory(name) {
@@ -78,14 +85,29 @@
     const statRow = document.getElementById('stat-row');
     statRow.innerHTML = `
       <div class="stat-tile"><div class="label">Total Portfolio Value</div><div class="value">${fmtMoney(data.totalValue)}</div><div class="sub">${data.accounts.length} accounts</div></div>
-      <div class="stat-tile"><div class="label">Stock Gain/Loss</div><div class="value ${gainClass(totalGainDollar)}">${fmtMoney(totalGainDollar)}</div><div class="sub ${gainClass(totalGainDollar)}">${fmtPct(totalGainPct)} vs. cost basis</div></div>
-      <div class="stat-tile"><div class="label">Trailing Income Generated</div><div class="value pos">${fmtMoney(trailingIncome)}</div><div class="sub">dividends + option premium + RoC + interest</div></div>
-      <div class="stat-tile"><div class="label">Data As Of</div><div class="value" style="font-size:16px;">${new Date(data.generatedAt).toLocaleString()}</div><div class="sub">${data.priceRefresh.live} live / ${data.priceRefresh.fallback} last-known prices</div></div>
+      <div class="stat-tile accent-2"><div class="label">Stock Gain/Loss</div><div class="value ${gainClass(totalGainDollar)}">${fmtMoney(totalGainDollar)}</div><div class="sub ${gainClass(totalGainDollar)}">${fmtPct(totalGainPct)} vs. cost basis</div></div>
+      <div class="stat-tile accent-3"><div class="label">Trailing Income Generated</div><div class="value pos">${fmtMoney(trailingIncome)}</div><div class="sub">dividends + option premium + RoC + interest</div></div>
+      <div class="stat-tile accent-4"><div class="label">Data As Of</div><div class="value" style="font-size:16px;">${new Date(data.generatedAt).toLocaleString()}</div><div class="sub">${data.priceRefresh.live} live / ${data.priceRefresh.fallback} last-known prices</div></div>
     `;
 
     const catEntries = Object.entries(data.categoryTotals).filter(([,v]) => v > 0.5).sort((a,b) => CATEGORY_ORDER.indexOf(a[0]) - CATEGORY_ORDER.indexOf(b[0]));
     const segments = catEntries.map(([label, value]) => ({ label, value, color: colorForCategory(label) }));
-    renderStackedBar(document.getElementById('allocation'), segments);
+    renderDonut(document.getElementById('allocation'), segments, {
+      centerLabel: fmtMoney(data.totalValue, { decimals: 0 }).length > 9 ? fmtMoney(data.totalValue / 1000, {decimals:0}) + 'k' : fmtMoney(data.totalValue),
+      centerSub: 'Total Value',
+    });
+
+    const goalCard = document.getElementById('goal-card');
+    if (data.plan.targetValue) {
+      renderGauge(document.getElementById('goal-gauge'), {
+        value: data.totalValue, max: data.plan.targetValue,
+        valueLabel: Math.round((data.totalValue / data.plan.targetValue) * 100) + '%',
+        subLabel: `${fmtMoney(data.totalValue)} of ${fmtMoney(data.plan.targetValue)}`,
+      });
+      document.getElementById('goal-note').textContent = data.plan.targetDate ? `Target date: ${data.plan.targetDate}` : '';
+    } else {
+      document.getElementById('goal-gauge').innerHTML = '<p class="muted" style="padding:24px 0;">No target set yet — talk it through in a Claude chat session.</p>';
+    }
 
     const histContainer = document.getElementById('history-chart');
     const histPoints = data.history.map(h => ({ date: h.date, value: h.totalValue }));
