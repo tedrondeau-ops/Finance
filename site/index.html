@@ -51,6 +51,12 @@
       </div>
 
       <div class="card">
+        <h2>Portfolio Health</h2>
+        <p class="muted" style="margin-top:-8px;margin-bottom:14px;">Nominal targets (the black tick on each dial) are generic risk/diversification starting points — see data/thresholds.json to adjust them for your own comfort level.</p>
+        <div class="gauge-grid" id="health-gauges"></div>
+      </div>
+
+      <div class="card">
         <h2>Sector Performance</h2>
         <p class="muted" style="margin-top:-8px;margin-bottom:14px;">Today's move per category. Toggle to total return since cost basis.</p>
         <div class="range-toggle" id="perf-toggle" style="margin-bottom:14px;"></div>
@@ -79,7 +85,7 @@
 
   <script type="module">
     import { getData, fmtMoney, fmtPct, gainClass } from './assets/app.js';
-    import { renderDonut, renderLineChart, renderGauge, renderDivergingBars, filterHistoryByRange, seriesColor } from './assets/charts.js';
+    import { renderDonut, renderLineChart, renderSpeedometer, renderDivergingBars, filterHistoryByRange, seriesColor } from './assets/charts.js';
 
     const CATEGORY_ORDER = ['Cash','Income & Dividend','Energy','Nuclear & Power','AI & Data Infrastructure','Biotech & Pharma','Materials & Industrial','Digital Assets','Mobility','Uncategorized'];
     function colorForCategory(name) {
@@ -99,7 +105,7 @@
         <div class="sub ${gainClass(data.totalTodayGainDollar)}">Today: ${fmtMoney(data.totalTodayGainDollar)} (${fmtPct(data.totalTodayGainPercent)})</div></div>
       <div class="stat-tile accent-2"><div class="label">Total Gain/Loss (all-time)</div><div class="value ${gainClass(totalGainDollar)}">${fmtMoney(totalGainDollar)}</div><div class="sub ${gainClass(totalGainDollar)}">${fmtPct(totalGainPct)} vs. cost basis</div></div>
       <div class="stat-tile accent-3"><div class="label">Trailing Income Generated</div><div class="value pos">${fmtMoney(trailingIncome)}</div><div class="sub">dividends + option premium + RoC + interest</div></div>
-      <div class="stat-tile accent-4"><div class="label">Data As Of</div><div class="value" style="font-size:16px;">${new Date(data.generatedAt).toLocaleString()}</div><div class="sub">${data.priceRefresh.live} live / ${data.priceRefresh.fallback} last-known prices</div></div>
+      <div class="stat-tile accent-4"><div class="label">Prices Refreshed</div><div class="value" style="font-size:16px;">${new Date(data.generatedAt).toLocaleString()}</div><div class="sub">${data.priceRefresh.live} live / ${data.priceRefresh.fallback} last-known · Holdings as of ${data.holdingsAsOf?.raw ?? 'unknown'}</div></div>
     `;
 
     // --- Value over time, with range toggle ---
@@ -137,15 +143,53 @@
 
     // --- Goal gauge ---
     if (data.plan.targetValue) {
-      renderGauge(document.getElementById('goal-gauge'), {
-        value: data.totalValue, max: data.plan.targetValue,
-        valueLabel: Math.round((data.totalValue / data.plan.targetValue) * 100) + '%',
-        subLabel: `${fmtMoney(data.totalValue)} of ${fmtMoney(data.plan.targetValue)}`,
+      const goalPct = (data.totalValue / data.plan.targetValue) * 100;
+      renderSpeedometer(document.getElementById('goal-gauge'), {
+        value: goalPct, min: 0, max: Math.max(120, Math.ceil(goalPct / 10) * 10 + 10),
+        zones: [{ to: 100, color: 'warning' }, { to: 1000, color: 'good' }],
+        peg: 100,
+        valueLabel: Math.round(goalPct) + '%',
+        label: `${fmtMoney(data.totalValue)} of ${fmtMoney(data.plan.targetValue)}`,
       });
       document.getElementById('goal-note').textContent = data.plan.targetDate ? `Target date: ${data.plan.targetDate}` : '';
     } else {
       document.getElementById('goal-gauge').innerHTML = '<p class="muted" style="padding:24px 0;">No target set yet — talk it through in a Claude chat session.</p>';
     }
+
+    // --- Portfolio Health gauges ---
+    const th = data.thresholds;
+    const cashPct = data.totalValue ? ((data.categoryTotals['Cash'] || 0) / data.totalValue) * 100 : 0;
+    const nonCash = data.holdings.filter(h => !h.isCash);
+    const topPosition = nonCash.reduce((a, h) => (h.currentValue > (a?.currentValue || 0) ? h : a), null);
+    const topPositionPct = topPosition ? (topPosition.currentValue / data.totalValue) * 100 : 0;
+    const nonCashCats = Object.entries(data.categoryTotals).filter(([k]) => k !== 'Cash');
+    const topCategory = nonCashCats.reduce((a, c) => (c[1] > (a?.[1] || 0) ? c : a), null);
+    const topCategoryPct = topCategory ? (topCategory[1] / data.totalValue) * 100 : 0;
+    const incWindowDays = Math.max(1, Math.round((new Date(data.income.window.to) - new Date(data.income.window.from)) / 86400000) + 1);
+    const trailingIncomeForYield = data.income.dividends.total + data.income.optionPremium.total + data.income.returnOfCapital.total + data.income.interest.total;
+    const incomeRunRate = trailingIncomeForYield * (365 / incWindowDays);
+    const incomeYieldPct = data.totalValue ? (incomeRunRate / data.totalValue) * 100 : 0;
+    const openShortPuts = data.options.filter(o => o.direction === 'short' && o.type === 'put');
+    const priceByTicker = {};
+    data.holdings.forEach(h => { priceByTicker[h.symbol] = h.quantity ? h.currentValue / h.quantity : null; });
+    const itmCount = openShortPuts.filter(o => { const p = priceByTicker[o.underlying]; return p != null && p < o.strike; }).length;
+    const assignmentRiskPct = openShortPuts.length ? (itmCount / openShortPuts.length) * 100 : 0;
+
+    const gauges = [
+      { cfg: th.cashPercent, value: cashPct, label: 'Cash & Collateral', valueLabel: cashPct.toFixed(1) + '%' },
+      { cfg: th.topPositionPercent, value: topPositionPct, label: `Top Position (${topPosition?.symbol ?? '—'})`, valueLabel: topPositionPct.toFixed(1) + '%' },
+      { cfg: th.topCategoryPercent, value: topCategoryPct, label: `Top Category (${topCategory?.[0] ?? '—'})`, valueLabel: topCategoryPct.toFixed(1) + '%' },
+      { cfg: th.incomeYieldPercent, value: incomeYieldPct, label: 'Income Yield (annualized)', valueLabel: incomeYieldPct.toFixed(1) + '%', max: th.incomeYieldPercent.max },
+      { cfg: th.assignmentRiskPercent, value: assignmentRiskPct, label: `Assignment Risk (${itmCount}/${openShortPuts.length} ITM)`, valueLabel: assignmentRiskPct.toFixed(0) + '%' },
+    ];
+    const gaugeGrid = document.getElementById('health-gauges');
+    gauges.forEach(g => {
+      const tile = document.createElement('div');
+      tile.className = 'gauge-tile';
+      tile.title = g.cfg.note;
+      renderSpeedometer(tile, { value: g.value, min: 0, max: g.cfg.max || 100, zones: g.cfg.zones, peg: g.cfg.peg, valueLabel: g.valueLabel, label: g.label });
+      gaugeGrid.appendChild(tile);
+    });
 
     // --- Sector performance (today vs total-return toggle) ---
     const perfToggle = document.getElementById('perf-toggle');

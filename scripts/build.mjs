@@ -16,6 +16,26 @@ function categoryFor(symbol, { map, fallback }) {
   return map[symbol] || fallback;
 }
 
+const MONTHS = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
+
+// Brokerage exports stamp a "Date downloaded ..." footer line - this is the
+// one honest way to know how stale the holdings/transactions snapshot is,
+// independent of when the build itself ran (live prices can be fresh while
+// share counts are weeks old).
+function extractDownloadedDate(text) {
+  const m = /Date downloaded\s+([A-Za-z0-9\/\-: .]+?)\s*(?:ET)?"?\s*$/m.exec(text);
+  if (!m) return { raw: null, iso: null };
+  const raw = m[1].trim();
+  let iso = null;
+  let dm = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(raw);
+  if (dm) iso = `${dm[3]}-${dm[1]}-${dm[2]}`;
+  if (!iso) {
+    dm = /^([A-Za-z]{3})-(\d{2})-(\d{4})/.exec(raw);
+    if (dm && MONTHS[dm[1]]) iso = `${dm[3]}-${String(MONTHS[dm[1]]).padStart(2, '0')}-${dm[2]}`;
+  }
+  return { raw, iso };
+}
+
 function parsePositions(text, categories) {
   const rows = parseCsv(text);
   const positions = [];
@@ -234,9 +254,12 @@ async function main() {
   const positionsText = decryptJSON(readJson(path.join(ROOT, 'data/positions_raw.enc.json')), pin).csv;
   const transactionsText = decryptJSON(readJson(path.join(ROOT, 'data/transactions_raw.enc.json')), pin).csv;
   const plan = JSON.parse(decryptJSON(readJson(path.join(ROOT, 'data/plan.enc.json')), pin).json);
+  const thresholds = readJson(path.join(ROOT, 'data/thresholds.json'));
 
   const positions = parsePositions(positionsText, categories);
   const { income, window } = parseTransactions(transactionsText);
+  const holdingsAsOf = extractDownloadedDate(positionsText);
+  const transactionsAsOf = extractDownloadedDate(transactionsText);
 
   const stockTickers = [...new Set(positions.filter((p) => !p.isCash && !p.isOption).map((p) => p.symbol))];
   const quotes = skipLive ? new Map() : await fetchQuotes(stockTickers);
@@ -296,6 +319,7 @@ async function main() {
   const data = {
     generatedAt: new Date().toISOString(),
     priceRefresh: { live: liveCount, fallback: fallbackCount },
+    holdingsAsOf, transactionsAsOf,
     accounts: [...new Set(positions.map((p) => p.accountName))],
     holdings,
     options,
@@ -310,6 +334,7 @@ async function main() {
     income: { ...income, window },
     history,
     plan,
+    thresholds,
   };
 
   const bundle = encryptJSON(data, pin);

@@ -116,32 +116,60 @@ export function renderDonut(container, segments, { size = 220, thickness = 32, c
 }
 
 // Semicircular progress gauge - e.g. current value vs. a target.
-export function renderGauge(container, { value, max, valueLabel, subLabel, color }) {
-  const size = 220, cx = size / 2, cy = size / 2 + 10, r = 85, thickness = 20;
-  const pct = max > 0 ? Math.min(value / max, 1) : 0;
-  const halfCirc = Math.PI * r;
+const ZONE_COLOR = { good: '--success', warning: '--warning', critical: '--critical' };
 
-  const svg = svgEl('svg', { viewBox: `0 0 ${size} ${size / 2 + 30}`, width: '100%', style: 'max-width:280px', class: 'svg-chart' });
-  const arcPath = (fromDeg, toDeg) => {
-    const rad = (d) => (d * Math.PI) / 180;
-    const x1 = cx + r * Math.cos(rad(fromDeg)), y1 = cy + r * Math.sin(rad(fromDeg));
-    const x2 = cx + r * Math.cos(rad(toDeg)), y2 = cy + r * Math.sin(rad(toDeg));
-    return `M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`;
+// A real speedometer: colored health/risk zones on the arc, a needle
+// pointing at the current value, and an optional peg tick marking the
+// nominal/target value so "where am I vs. normal" reads at a glance.
+// zones: [{to, color}] cumulative bounds from min, color is 'good'|'warning'|'critical'|css-color.
+export function renderSpeedometer(container, { value, min = 0, max = 100, zones, peg, valueLabel, label, unit = '%' }) {
+  const size = 220, cx = size / 2, cy = size / 2 + 6, r = 82, thickness = 18;
+  const clampedValue = Math.max(min, Math.min(max, value));
+  const toAngle = (v) => 180 + ((v - min) / (max - min)) * 180;
+  const rad = (d) => (d * Math.PI) / 180;
+  const pt = (radius, deg) => [cx + radius * Math.cos(rad(deg)), cy + radius * Math.sin(rad(deg))];
+  const arcPath = (fromDeg, toDeg, radius) => {
+    const [x1, y1] = pt(radius, fromDeg), [x2, y2] = pt(radius, toDeg);
+    const large = toDeg - fromDeg > 180 ? 1 : 0;
+    return `M ${x1} ${y1} A ${radius} ${radius} 0 ${large} 1 ${x2} ${y2}`;
   };
-  svg.appendChild(svgEl('path', { d: arcPath(180, 360), fill: 'none', stroke: cssVar('--gridline'), 'stroke-width': thickness, 'stroke-linecap': 'round' }));
-  const progressLen = pct * halfCirc;
-  const fg = svgEl('path', {
-    d: arcPath(180, 360), fill: 'none', stroke: color || cssVar('--series-1'), 'stroke-width': thickness, 'stroke-linecap': 'round',
-    'stroke-dasharray': `${progressLen} ${halfCirc}`,
-  });
-  svg.appendChild(fg);
 
-  const big = svgEl('text', { x: cx, y: cy - 8, 'text-anchor': 'middle', style: `font-size:24px;font-weight:600;fill:${cssVar('--text-primary')}` });
-  big.textContent = valueLabel ?? `${Math.round(pct * 100)}%`;
+  const viewH = size / 2 + 70;
+  const svg = svgEl('svg', { viewBox: `0 0 ${size} ${viewH}`, width: '100%', style: 'max-width:220px;display:block;margin:0 auto', class: 'svg-chart', preserveAspectRatio: 'xMidYMid meet' });
+
+  if (zones && zones.length) {
+    let fromV = min;
+    zones.forEach((z) => {
+      const toV = Math.min(z.to, max);
+      if (toV > fromV) {
+        const color = ZONE_COLOR[z.color] ? cssVar(ZONE_COLOR[z.color]) : (z.color || cssVar('--series-1'));
+        svg.appendChild(svgEl('path', { d: arcPath(toAngle(fromV), toAngle(toV), r), fill: 'none', stroke: color, 'stroke-width': thickness }));
+      }
+      fromV = toV;
+    });
+  } else {
+    svg.appendChild(svgEl('path', { d: arcPath(180, 360, r), fill: 'none', stroke: cssVar('--series-1'), 'stroke-width': thickness }));
+  }
+
+  if (typeof peg === 'number') {
+    const a = toAngle(Math.max(min, Math.min(max, peg)));
+    const [x1, y1] = pt(r - thickness / 2 - 3, a);
+    const [x2, y2] = pt(r + thickness / 2 + 3, a);
+    svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: cssVar('--text-primary'), 'stroke-width': 2.5 }));
+  }
+
+  // Needle
+  const needleAngle = toAngle(clampedValue);
+  const [nx, ny] = pt(r - thickness / 2 - 6, needleAngle);
+  svg.appendChild(svgEl('line', { x1: cx, y1: cy, x2: nx, y2: ny, stroke: cssVar('--text-primary'), 'stroke-width': 3, 'stroke-linecap': 'round' }));
+  svg.appendChild(svgEl('circle', { cx, cy, r: 6, fill: cssVar('--text-primary') }));
+
+  const big = svgEl('text', { x: cx, y: cy + 30, 'text-anchor': 'middle', style: `font-size:22px;font-weight:700;fill:${cssVar('--text-primary')}` });
+  big.textContent = valueLabel ?? `${Math.round(value)}${unit}`;
   svg.appendChild(big);
-  if (subLabel) {
-    const sub = svgEl('text', { x: cx, y: cy + 14, 'text-anchor': 'middle', style: `font-size:12px;fill:${cssVar('--text-muted')}` });
-    sub.textContent = subLabel;
+  if (label) {
+    const sub = svgEl('text', { x: cx, y: cy + 48, 'text-anchor': 'middle', style: `font-size:11px;fill:${cssVar('--text-muted')}` });
+    sub.textContent = label;
     svg.appendChild(sub);
   }
   container.appendChild(svg);
