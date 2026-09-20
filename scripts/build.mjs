@@ -264,6 +264,26 @@ async function main() {
   const stockTickers = [...new Set(positions.filter((p) => !p.isCash && !p.isOption).map((p) => p.symbol))];
   const quotes = skipLive ? new Map() : await fetchQuotes(stockTickers);
 
+  // Market context: gold/silver + GICS sector ETFs, via the same no-key
+  // pipeline, so this updates daily like everything else rather than being
+  // a one-off snapshot.
+  const SECTOR_ETFS = {
+    XLK: 'Technology', XLE: 'Energy', XLF: 'Financials', XLV: 'Health Care',
+    XLI: 'Industrials', XLY: 'Consumer Discretionary', XLP: 'Consumer Staples',
+    XLU: 'Utilities', XLB: 'Materials', XLRE: 'Real Estate', XLC: 'Communication Services',
+  };
+  const marketTickers = ['GC=F', 'SI=F', ...Object.keys(SECTOR_ETFS)];
+  const marketQuotes = skipLive ? new Map() : await fetchQuotes(marketTickers);
+  const dayChangePct = (q) => (q && q.previousClose ? ((q.price - q.previousClose) / q.previousClose) * 100 : null);
+  const marketContext = {
+    gold: { price: marketQuotes.get('GC=F')?.price ?? null, changePercent: dayChangePct(marketQuotes.get('GC=F')) },
+    silver: { price: marketQuotes.get('SI=F')?.price ?? null, changePercent: dayChangePct(marketQuotes.get('SI=F')) },
+    sectors: Object.entries(SECTOR_ETFS).map(([symbol, name]) => ({
+      symbol, name, changePercent: dayChangePct(marketQuotes.get(symbol)),
+    })).filter((s) => s.changePercent !== null),
+    asOf: new Date().toISOString(),
+  };
+
   let liveCount = 0, fallbackCount = 0;
   for (const p of positions) {
     if (p.isCash || p.isOption) continue;
@@ -335,6 +355,7 @@ async function main() {
     history,
     plan,
     thresholds,
+    marketContext,
   };
 
   const bundle = encryptJSON(data, pin);

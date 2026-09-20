@@ -57,6 +57,14 @@
       </div>
 
       <div class="card">
+        <h2>Market Context</h2>
+        <p class="muted" style="margin-top:-8px;margin-bottom:14px;">Broad market signal, independent of your holdings — updates daily with the rest of the dashboard.</p>
+        <div class="stat-row" id="market-tiles" style="margin-bottom:16px;"></div>
+        <h2 style="font-size:12px;">Sector Rotation (most recent trading day)</h2>
+        <div id="sector-rotation"></div>
+      </div>
+
+      <div class="card">
         <h2>Sector Performance</h2>
         <p class="muted" style="margin-top:-8px;margin-bottom:14px;">Today's move per category. Toggle to total return since cost basis.</p>
         <div class="range-toggle" id="perf-toggle" style="margin-bottom:14px;"></div>
@@ -176,10 +184,11 @@
     const assignmentRiskPct = openShortPuts.length ? (itmCount / openShortPuts.length) * 100 : 0;
 
     const gauges = [
+      { cfg: th.totalReturnPercent, value: totalGainPct ?? 0, label: 'Total Return vs. S&P 500 Avg', valueLabel: fmtPct(totalGainPct, 1) },
       { cfg: th.cashPercent, value: cashPct, label: 'Cash & Collateral', valueLabel: cashPct.toFixed(1) + '%' },
       { cfg: th.topPositionPercent, value: topPositionPct, label: `Top Position (${topPosition?.symbol ?? '—'})`, valueLabel: topPositionPct.toFixed(1) + '%' },
       { cfg: th.topCategoryPercent, value: topCategoryPct, label: `Top Category (${topCategory?.[0] ?? '—'})`, valueLabel: topCategoryPct.toFixed(1) + '%' },
-      { cfg: th.incomeYieldPercent, value: incomeYieldPct, label: 'Income Yield (annualized)', valueLabel: incomeYieldPct.toFixed(1) + '%', max: th.incomeYieldPercent.max },
+      { cfg: th.incomeYieldPercent, value: incomeYieldPct, label: 'Income Yield (annualized)', valueLabel: incomeYieldPct.toFixed(1) + '%' },
       { cfg: th.assignmentRiskPercent, value: assignmentRiskPct, label: `Assignment Risk (${itmCount}/${openShortPuts.length} ITM)`, valueLabel: assignmentRiskPct.toFixed(0) + '%' },
     ];
     const gaugeGrid = document.getElementById('health-gauges');
@@ -187,7 +196,7 @@
       const tile = document.createElement('div');
       tile.className = 'gauge-tile';
       tile.title = g.cfg.note;
-      renderSpeedometer(tile, { value: g.value, min: 0, max: g.cfg.max || 100, zones: g.cfg.zones, peg: g.cfg.peg, valueLabel: g.valueLabel, label: g.label });
+      renderSpeedometer(tile, { value: g.value, min: g.cfg.min ?? 0, max: g.cfg.max ?? 100, zones: g.cfg.zones, peg: g.cfg.peg, valueLabel: g.valueLabel, label: g.label });
       gaugeGrid.appendChild(tile);
     });
 
@@ -213,6 +222,25 @@
       drawSectorPerformance();
     });
     drawSectorPerformance();
+
+    // --- Market context: gold/silver + sector rotation ---
+    const mc = data.marketContext;
+    const marketTiles = document.getElementById('market-tiles');
+    if (mc.gold.price != null || mc.silver.price != null) {
+      marketTiles.innerHTML = `
+        <div class="stat-tile"><div class="label">Gold (front-month futures)</div><div class="value">${fmtMoney(mc.gold.price, {decimals:2})}</div><div class="sub ${gainClass(mc.gold.changePercent)}">${fmtPct(mc.gold.changePercent)} today</div></div>
+        <div class="stat-tile accent-2"><div class="label">Silver (front-month futures)</div><div class="value">${fmtMoney(mc.silver.price, {decimals:2})}</div><div class="sub ${gainClass(mc.silver.changePercent)}">${fmtPct(mc.silver.changePercent)} today</div></div>
+      `;
+    } else {
+      marketTiles.innerHTML = '<p class="muted">Not available from this build (offline/local build) — populates on the next scheduled live refresh.</p>';
+    }
+    const sectorRotationEl = document.getElementById('sector-rotation');
+    if (mc.sectors.length) {
+      const rows = [...mc.sectors].sort((a, b) => b.changePercent - a.changePercent).map(s => ({ label: s.name, pct: s.changePercent }));
+      renderDivergingBars(sectorRotationEl, rows);
+    } else {
+      sectorRotationEl.innerHTML = '<p class="muted">Not available from this build — populates on the next scheduled live refresh.</p>';
+    }
 
     // --- Top movers ---
     function renderMoverList(container, holdings) {
