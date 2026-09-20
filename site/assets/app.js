@@ -28,9 +28,6 @@ export async function getData() {
   const cached = sessionStorage.getItem(SESSION_KEY);
   if (cached) return JSON.parse(cached);
 
-  const res = await fetch('data/bundle.enc.json', { cache: 'no-store' });
-  const bundle = await res.json();
-
   const gate = document.getElementById('pin-gate');
   const app = document.getElementById('app');
   const form = document.getElementById('pin-form');
@@ -38,11 +35,20 @@ export async function getData() {
   const errorEl = document.getElementById('pin-error');
   gate.style.display = 'flex';
 
+  // Attach the real submit handler FIRST, synchronously, before any network
+  // request - otherwise there's a window (visible on a real network, not on
+  // localhost) where the gate is showing but nothing is listening yet, and
+  // Enter falls through to a plain HTML form submit (page just reloads).
+  // The inline onsubmit="return false" in the HTML is a second safety net
+  // that works even before this script has finished loading at all.
+  const bundlePromise = fetch('data/bundle.enc.json', { cache: 'no-store' }).then((r) => r.json());
+
   return new Promise((resolve) => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       errorEl.textContent = '';
       try {
+        const bundle = await bundlePromise;
         const data = await decryptBundle(bundle, input.value.trim());
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
         gate.style.display = 'none';
