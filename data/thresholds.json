@@ -1,7 +1,7 @@
 {
-  "_readme": "Nominal/target values and risk zones for the Portfolio Health gauges. These are starting points based on common diversification/risk guidelines, not your stated goals - edit freely (ask Claude to adjust during a chat session).",
+  "_readme": "Nominal/target values and risk zones for the Portfolio Health gauges. Where a real financial-industry standard exists, it's cited in the note. Where none exists, that's stated too rather than pretending otherwise. Edit freely (ask Claude to adjust during a chat session).",
   "cashPercent": {
-    "note": "This portfolio runs many cash-secured puts, which need cash collateral - so 'cash' here isn't idle, it's largely CSP collateral. Zones are wider than a typical buy-and-hold guideline for that reason.",
+    "note": "No formal external standard for this one - it's a reasoned heuristic, not a citation. This portfolio runs many cash-secured puts, which need cash collateral, so 'cash' here is largely CSP collateral, not idle cash. Zones are wider than a typical buy-and-hold cash-drag guideline for that reason.",
     "peg": 20,
     "zones": [
       { "to": 10, "color": "warning" },
@@ -10,35 +10,50 @@
     ]
   },
   "topPositionPercent": {
-    "note": "Common single-stock concentration guideline: keep any one position under ~10% of the portfolio.",
-    "peg": 10,
+    "note": "SEC diversification standard for a 'diversified' fund under the Investment Company Act of 1940: for 75% of assets, no more than 5% may be in any one issuer (the '75-5-10' rule). Peg set at that 5% ceiling.",
+    "source": "https://www.sec.gov/files/staff-report-threshold-limits-diversified-funds.pdf",
+    "peg": 5,
     "zones": [
-      { "to": 10, "color": "good" },
-      { "to": 15, "color": "warning" },
+      { "to": 5, "color": "good" },
+      { "to": 10, "color": "warning" },
       { "to": 100, "color": "critical" }
     ]
   },
   "topCategoryPercent": {
-    "note": "Common sector/theme concentration guideline: keep any one theme under ~30% of the portfolio.",
-    "peg": 30,
+    "note": "The SEC's own definition of 'concentrated' is 25%+ of net assets in one industry/group of industries. Peg set at that 25% line.",
+    "source": "https://www.sec.gov/files/staff-report-threshold-limits-diversified-funds.pdf",
+    "peg": 25,
     "zones": [
-      { "to": 30, "color": "good" },
-      { "to": 45, "color": "warning" },
+      { "to": 25, "color": "good" },
+      { "to": 40, "color": "warning" },
       { "to": 100, "color": "critical" }
     ]
   },
+  "totalReturnPercent": {
+    "note": "Peg is the S&P 500's long-run nominal average annual return (~10%/yr since 1926). Important caveat: the value this gauge shows is unrealized total return since cost basis across positions bought at different times, NOT a time-weighted annualized return - so this is a rough directional comparison, not apples-to-apples with a true CAGR.",
+    "source": "https://www.fidelity.com/learning-center/trading-investing/sp-500-average-return",
+    "peg": 10,
+    "min": -50,
+    "max": 50,
+    "zones": [
+      { "to": -20, "color": "critical" },
+      { "to": 0, "color": "warning" },
+      { "to": 50, "color": "good" }
+    ]
+  },
   "incomeYieldPercent": {
-    "note": "Annualized income run-rate as % of total portfolio value. Generic income-portfolio reference range, not a stated personal goal.",
-    "peg": 6,
+    "note": "For context: the S&P 500's own dividend yield is only ~1.1% as of Sep 2026 (long-run average ~1.6-1.8%) - a passive index holder isn't targeting meaningful income at all. This portfolio's dividend + cash-secured-put strategy is deliberately aiming well above that baseline; the peg below is a reasoned target for an income-focused strategy, not an external standard.",
+    "source": "https://www.gurufocus.com/economic_indicators/150/sp-500-dividend-yield",
+    "peg": 8,
     "max": 20,
     "zones": [
       { "to": 3, "color": "warning" },
-      { "to": 12, "color": "good" },
+      { "to": 14, "color": "good" },
       { "to": 20, "color": "warning" }
     ]
   },
   "assignmentRiskPercent": {
-    "note": "% of open cash-secured puts currently in-the-money (assignment risk). Lower is more comfortable.",
+    "note": "No formal external standard - this is a reasoned risk-comfort heuristic for % of open cash-secured puts currently in-the-money. Lower is more comfortable.",
     "peg": 30,
     "zones": [
       { "to": 30, "color": "good" },
