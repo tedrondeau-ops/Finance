@@ -31,7 +31,10 @@ function parsePositions(text, categories) {
     const description = (row[3] || '').trim();
     const quantity = money(row[4]);
     const lastPrice = money(row[5]);
+    const lastPriceChange = money(row[6]);
     const currentValue = money(row[7]);
+    const todayGainDollar = money(row[8]);
+    const todayGainPercent = money(row[9]);
     const totalGainDollar = money(row[10]);
     const totalGainPercent = money(row[11]);
     const percentOfAccount = money(row[12]);
@@ -60,7 +63,8 @@ function parsePositions(text, categories) {
     const category = isCash ? 'Cash' : categoryFor(isOption ? underlying : symbol, categories);
 
     positions.push({
-      accountNumber, accountName, symbol, description, quantity, lastPrice, currentValue,
+      accountNumber, accountName, symbol, description, quantity, lastPrice, lastPriceChange, currentValue,
+      todayGainDollar: todayGainDollar || 0, todayGainPercent,
       totalGainDollar, totalGainPercent, percentOfAccount, costBasisTotal, avgCostBasis,
       isCash, isOption, optionDetails, category,
     });
@@ -158,16 +162,22 @@ function aggregateHoldings(positions) {
     if (!byTicker.has(key)) {
       byTicker.set(key, {
         symbol: key, description: p.description, category: p.category, isCash: p.isCash,
-        quantity: 0, currentValue: 0, costBasisTotal: 0, accounts: [],
+        quantity: 0, currentValue: 0, costBasisTotal: 0, todayGainDollar: 0, accounts: [],
       });
     }
     const h = byTicker.get(key);
     h.quantity += p.quantity || 0;
     h.currentValue += p.currentValue || 0;
     h.costBasisTotal += p.costBasisTotal || 0;
+    h.todayGainDollar += p.todayGainDollar || 0;
     h.accounts.push({ account: p.accountName, quantity: p.quantity, currentValue: p.currentValue });
   }
-  return [...byTicker.values()];
+  const holdings = [...byTicker.values()];
+  for (const h of holdings) {
+    const startOfDayValue = h.currentValue - h.todayGainDollar;
+    h.todayGainPercent = startOfDayValue !== 0 ? (h.todayGainDollar / startOfDayValue) * 100 : null;
+  }
+  return holdings;
 }
 
 function readJson(p) {
@@ -180,6 +190,36 @@ function categoryTotals(positions) {
     totals[p.category] = (totals[p.category] || 0) + (p.currentValue || 0);
   }
   return totals;
+}
+
+// Per-category performance: today's move and total return vs. cost basis -
+// answers "what is each sector doing", not just "how big is it" (the donut).
+function categoryPerformance(positions) {
+  const byCategory = new Map();
+  for (const p of positions) {
+    if (!byCategory.has(p.category)) {
+      byCategory.set(p.category, { category: p.category, value: 0, costBasis: 0, todayGainDollar: 0 });
+    }
+    const c = byCategory.get(p.category);
+    c.value += p.currentValue || 0;
+    c.costBasis += p.costBasisTotal ?? p.currentValue ?? 0; // cash has no cost basis - treat as flat (0% return)
+    c.todayGainDollar += p.todayGainDollar || 0;
+  }
+  return [...byCategory.values()].map((c) => ({
+    ...c,
+    totalGainDollar: c.value - c.costBasis,
+    totalGainPercent: c.costBasis ? ((c.value - c.costBasis) / c.costBasis) * 100 : null,
+    todayGainPercent: (c.value - c.todayGainDollar) !== 0 ? (c.todayGainDollar / (c.value - c.todayGainDollar)) * 100 : null,
+  }));
+}
+
+function topMovers(holdings, n = 5) {
+  const withMove = holdings.filter((h) => !h.isCash && typeof h.todayGainPercent === 'number');
+  const sorted = [...withMove].sort((a, b) => b.todayGainPercent - a.todayGainPercent);
+  return {
+    gainers: sorted.slice(0, n),
+    losers: sorted.slice(-n).reverse().filter((h) => h.todayGainPercent < 0),
+  };
 }
 
 async function main() {
@@ -210,6 +250,10 @@ async function main() {
       p.lastPrice = q.price;
       p.priceSource = q.source;
       p.priceAsOf = q.asOf;
+      if (typeof q.previousClose === 'number' && q.previousClose > 0) {
+        p.todayGainDollar = (q.price - q.previousClose) * (p.quantity || 0);
+        p.todayGainPercent = (q.price / q.previousClose - 1) * 100;
+      }
       liveCount++;
     } else {
       p.priceSource = 'export';
@@ -219,9 +263,14 @@ async function main() {
 
   const holdings = aggregateHoldings(positions);
   const catTotals = categoryTotals(positions);
+  const catPerformance = categoryPerformance(positions);
+  const movers = topMovers(holdings);
   const totalValue = Object.values(catTotals).reduce((a, b) => a + b, 0);
   const totalStockCostBasis = holdings.filter((h) => !h.isCash).reduce((a, h) => a + (h.costBasisTotal || 0), 0);
   const totalStockValue = holdings.filter((h) => !h.isCash).reduce((a, h) => a + (h.currentValue || 0), 0);
+  const totalTodayGainDollar = positions.reduce((a, p) => a + (p.todayGainDollar || 0), 0);
+  const totalTodayGainPercent = (totalValue - totalTodayGainDollar) !== 0
+    ? (totalTodayGainDollar / (totalValue - totalTodayGainDollar)) * 100 : null;
 
   const options = positions.filter((p) => p.isOption).map((p) => ({
     symbol: p.symbol, description: p.description, accountName: p.accountName,
@@ -251,7 +300,11 @@ async function main() {
     holdings,
     options,
     categoryTotals: catTotals,
+    categoryPerformance: catPerformance,
+    topMovers: movers,
     totalValue,
+    totalTodayGainDollar,
+    totalTodayGainPercent,
     totalStockCostBasis,
     totalStockValue,
     income: { ...income, window },

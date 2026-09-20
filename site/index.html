@@ -12,6 +12,7 @@
     <nav class="nav">
       <a href="index.html" class="active">Overview</a>
       <a href="income.html">Income</a>
+      <a href="holdings.html">Holdings</a>
     </nav>
   </div>
 
@@ -28,6 +29,15 @@
     <div class="page">
       <div class="stat-row" id="stat-row"></div>
 
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+          <h2 style="margin:0;">Value Over Time</h2>
+          <div class="range-toggle" id="range-toggle"></div>
+        </div>
+        <div id="history-chart"></div>
+        <p class="muted" id="history-note"></p>
+      </div>
+
       <div class="grid-2">
         <div class="card">
           <h2>Allocation by Category</h2>
@@ -41,9 +51,21 @@
       </div>
 
       <div class="card">
-        <h2>Value Over Time</h2>
-        <div id="history-chart"></div>
-        <p class="muted" id="history-note"></p>
+        <h2>Sector Performance</h2>
+        <p class="muted" style="margin-top:-8px;margin-bottom:14px;">Today's move per category. Toggle to total return since cost basis.</p>
+        <div class="range-toggle" id="perf-toggle" style="margin-bottom:14px;"></div>
+        <div id="sector-performance"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h2>Top Gainers Today</h2>
+          <div id="gainers-list"></div>
+        </div>
+        <div class="card">
+          <h2>Top Losers Today</h2>
+          <div id="losers-list"></div>
+        </div>
       </div>
 
       <div class="card">
@@ -51,24 +73,13 @@
         <div class="plan-notes" id="plan-notes"></div>
       </div>
 
-      <div class="card">
-        <h2>Holdings</h2>
-        <table id="holdings-table">
-          <thead><tr>
-            <th>Symbol</th><th>Category</th><th>Shares</th><th>Price</th><th>Value</th>
-            <th>Cost Basis</th><th>Gain/Loss $</th><th>Gain/Loss %</th><th>% of Port.</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-
       <p class="muted" id="footer-note"></p>
     </div>
   </div>
 
   <script type="module">
-    import { getData, fmtMoney, fmtPct, gainClass, sortable } from './assets/app.js';
-    import { renderDonut, renderLineChart, renderGauge, seriesColor } from './assets/charts.js';
+    import { getData, fmtMoney, fmtPct, gainClass } from './assets/app.js';
+    import { renderDonut, renderLineChart, renderGauge, renderDivergingBars, filterHistoryByRange, seriesColor } from './assets/charts.js';
 
     const CATEGORY_ORDER = ['Cash','Income & Dividend','Energy','Nuclear & Power','AI & Data Infrastructure','Biotech & Pharma','Materials & Industrial','Digital Assets','Mobility','Uncategorized'];
     function colorForCategory(name) {
@@ -84,20 +95,47 @@
 
     const statRow = document.getElementById('stat-row');
     statRow.innerHTML = `
-      <div class="stat-tile"><div class="label">Total Portfolio Value</div><div class="value">${fmtMoney(data.totalValue)}</div><div class="sub">${data.accounts.length} accounts</div></div>
-      <div class="stat-tile accent-2"><div class="label">Stock Gain/Loss</div><div class="value ${gainClass(totalGainDollar)}">${fmtMoney(totalGainDollar)}</div><div class="sub ${gainClass(totalGainDollar)}">${fmtPct(totalGainPct)} vs. cost basis</div></div>
+      <div class="stat-tile"><div class="label">Total Portfolio Value</div><div class="value">${fmtMoney(data.totalValue)}</div>
+        <div class="sub ${gainClass(data.totalTodayGainDollar)}">Today: ${fmtMoney(data.totalTodayGainDollar)} (${fmtPct(data.totalTodayGainPercent)})</div></div>
+      <div class="stat-tile accent-2"><div class="label">Total Gain/Loss (all-time)</div><div class="value ${gainClass(totalGainDollar)}">${fmtMoney(totalGainDollar)}</div><div class="sub ${gainClass(totalGainDollar)}">${fmtPct(totalGainPct)} vs. cost basis</div></div>
       <div class="stat-tile accent-3"><div class="label">Trailing Income Generated</div><div class="value pos">${fmtMoney(trailingIncome)}</div><div class="sub">dividends + option premium + RoC + interest</div></div>
       <div class="stat-tile accent-4"><div class="label">Data As Of</div><div class="value" style="font-size:16px;">${new Date(data.generatedAt).toLocaleString()}</div><div class="sub">${data.priceRefresh.live} live / ${data.priceRefresh.fallback} last-known prices</div></div>
     `;
 
+    // --- Value over time, with range toggle ---
+    const RANGES = ['1W','1M','3M','6M','YTD','1Y','ALL'];
+    let currentRange = 'ALL';
+    const rangeToggle = document.getElementById('range-toggle');
+    rangeToggle.innerHTML = RANGES.map(r => `<button data-range="${r}" class="${r===currentRange?'active':''}">${r}</button>`).join('');
+    function drawHistory() {
+      const filtered = filterHistoryByRange(data.history, currentRange);
+      const container = document.getElementById('history-chart');
+      container.innerHTML = '';
+      renderLineChart(container, filtered.map(h => ({ date: h.date, value: h.totalValue })), {
+        valueFmt: v => '$' + Math.round(v).toLocaleString('en-US'), goal: data.plan.targetValue || undefined,
+      });
+    }
+    rangeToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-range]');
+      if (!btn) return;
+      currentRange = btn.dataset.range;
+      rangeToggle.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+      drawHistory();
+    });
+    drawHistory();
+    document.getElementById('history-note').textContent = data.history.length < 5
+      ? `Only ${data.history.length} snapshot(s) so far — longer ranges (3M/6M/1Y) will fill in as the daily rebuild accumulates history.`
+      : `${data.history.length} daily snapshots.`;
+
+    // --- Allocation donut ---
     const catEntries = Object.entries(data.categoryTotals).filter(([,v]) => v > 0.5).sort((a,b) => CATEGORY_ORDER.indexOf(a[0]) - CATEGORY_ORDER.indexOf(b[0]));
     const segments = catEntries.map(([label, value]) => ({ label, value, color: colorForCategory(label) }));
     renderDonut(document.getElementById('allocation'), segments, {
-      centerLabel: fmtMoney(data.totalValue, { decimals: 0 }).length > 9 ? fmtMoney(data.totalValue / 1000, {decimals:0}) + 'k' : fmtMoney(data.totalValue),
+      centerLabel: fmtMoney(data.totalValue).length > 9 ? fmtMoney(data.totalValue / 1000, {decimals:0}) + 'k' : fmtMoney(data.totalValue),
       centerSub: 'Total Value',
     });
 
-    const goalCard = document.getElementById('goal-card');
+    // --- Goal gauge ---
     if (data.plan.targetValue) {
       renderGauge(document.getElementById('goal-gauge'), {
         value: data.totalValue, max: data.plan.targetValue,
@@ -109,13 +147,42 @@
       document.getElementById('goal-gauge').innerHTML = '<p class="muted" style="padding:24px 0;">No target set yet — talk it through in a Claude chat session.</p>';
     }
 
-    const histContainer = document.getElementById('history-chart');
-    const histPoints = data.history.map(h => ({ date: h.date, value: h.totalValue }));
-    renderLineChart(histContainer, histPoints, { valueFmt: v => '$' + Math.round(v).toLocaleString('en-US'), goal: data.plan.targetValue || undefined });
-    document.getElementById('history-note').textContent = histPoints.length < 5
-      ? `Only ${histPoints.length} snapshot(s) so far — the trend line fills in as the daily rebuild runs.`
-      : `${histPoints.length} daily snapshots.`;
+    // --- Sector performance (today vs total-return toggle) ---
+    const perfToggle = document.getElementById('perf-toggle');
+    const PERF_MODES = [{ key: 'today', label: "Today" }, { key: 'total', label: 'Total Return' }];
+    let perfMode = 'today';
+    perfToggle.innerHTML = PERF_MODES.map(m => `<button data-mode="${m.key}" class="${m.key===perfMode?'active':''}">${m.label}</button>`).join('');
+    function drawSectorPerformance() {
+      const rows = [...data.categoryPerformance]
+        .filter(c => c.category !== 'Cash')
+        .map(c => ({ label: c.category, pct: (perfMode === 'today' ? c.todayGainPercent : c.totalGainPercent) ?? 0 }))
+        .sort((a, b) => b.pct - a.pct);
+      const el = document.getElementById('sector-performance');
+      el.innerHTML = '';
+      renderDivergingBars(el, rows);
+    }
+    perfToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-mode]');
+      if (!btn) return;
+      perfMode = btn.dataset.mode;
+      perfToggle.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+      drawSectorPerformance();
+    });
+    drawSectorPerformance();
 
+    // --- Top movers ---
+    function renderMoverList(container, holdings) {
+      if (!holdings.length) { container.innerHTML = '<p class="muted">No movers to show.</p>'; return; }
+      container.innerHTML = holdings.map(h => `
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gridline);font-size:13px;">
+          <div><strong>${h.symbol}</strong> <span class="muted">${h.category}</span></div>
+          <div class="${gainClass(h.todayGainPercent)}" style="font-variant-numeric:tabular-nums;">${fmtPct(h.todayGainPercent)}</div>
+        </div>`).join('');
+    }
+    renderMoverList(document.getElementById('gainers-list'), data.topMovers.gainers);
+    renderMoverList(document.getElementById('losers-list'), data.topMovers.losers);
+
+    // --- Plan ---
     const planEl = document.getElementById('plan-notes');
     const planMeta = [];
     if (data.plan.targetValue) planMeta.push(`Target: ${fmtMoney(data.plan.targetValue)}${data.plan.targetDate ? ' by ' + data.plan.targetDate : ''}`);
@@ -123,30 +190,8 @@
       `<ul>${data.plan.notes.map(n => `<li>${n}</li>`).join('')}</ul>` +
       `<p class="muted">Last updated ${data.plan.updated}</p>`;
 
-    const table = document.getElementById('holdings-table');
-    const rows = data.holdings.filter(h => !h.isCash).map(h => {
-      const gainD = h.currentValue - h.costBasisTotal;
-      const gainP = h.costBasisTotal ? (gainD / h.costBasisTotal) * 100 : null;
-      const pctPort = (h.currentValue / data.totalValue) * 100;
-      const price = h.quantity ? h.currentValue / h.quantity : null;
-      return { symbol: h.symbol, category: h.category, quantity: h.quantity, price, currentValue: h.currentValue, costBasisTotal: h.costBasisTotal, gainD, gainP, pctPort };
-    });
-    sortable(table, rows, r => `
-      <tr>
-        <td>${r.symbol}</td><td>${r.category}</td>
-        <td>${r.quantity?.toLocaleString('en-US', {maximumFractionDigits:2})}</td>
-        <td>${fmtMoney(r.price, {decimals:2})}</td>
-        <td>${fmtMoney(r.currentValue)}</td>
-        <td>${fmtMoney(r.costBasisTotal)}</td>
-        <td class="${gainClass(r.gainD)}">${fmtMoney(r.gainD)}</td>
-        <td class="${gainClass(r.gainP)}">${fmtPct(r.gainP)}</td>
-        <td>${r.pctPort.toFixed(1)}%</td>
-      </tr>`,
-      'currentValue', ['symbol','category','quantity','price','currentValue','costBasisTotal','gainD','gainP','pctPort']
-    );
-
     document.getElementById('footer-note').textContent =
-      `Categories are a first-pass classification — review data/categories.json. Cash-secured puts are tracked on the Income page, not folded into stock gain/loss above.`;
+      `Full position-level detail is on the Holdings page. Categories are a first-pass classification — review data/categories.json.`;
   </script>
 </body>
 </html>

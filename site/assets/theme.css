@@ -133,6 +133,14 @@ tbody tr:hover { background: var(--gridline); }
 .stackbar { display: flex; height: 28px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
 .stackbar .seg { height: 100%; }
 
+.range-toggle { display: flex; gap: 4px; }
+.range-toggle button {
+  font-size: 12px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface-1); color: var(--text-secondary); cursor: pointer;
+}
+.range-toggle button.active { background: var(--series-1); color: white; border-color: var(--series-1); }
+.range-toggle button:hover:not(.active) { background: var(--gridline); }
+
 .callout { border-left: 3px solid var(--warning); background: var(--gridline); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 13px; color: var(--text-secondary); margin-top: 10px; }
 
 .muted { color: var(--text-muted); font-size: 12px; }

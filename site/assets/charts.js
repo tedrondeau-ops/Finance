@@ -147,6 +147,78 @@ export function renderGauge(container, { value, max, valueLabel, subLabel, color
   container.appendChild(svg);
 }
 
+// Diverging bar list, centered on zero - "what is each sector doing" at a
+// glance, with the exact number always printed (never color-only).
+export function renderDivergingBars(container, rows, { valueFmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%' } = {}) {
+  const maxAbs = Math.max(...rows.map((r) => Math.abs(r.pct)), 0.01);
+  const list = document.createElement('div');
+  list.style.display = 'flex';
+  list.style.flexDirection = 'column';
+  list.style.gap = '10px';
+  rows.forEach((r) => {
+    const row = document.createElement('div');
+    row.style.display = 'grid';
+    row.style.gridTemplateColumns = 'minmax(90px,140px) 1fr 64px';
+    row.style.alignItems = 'center';
+    row.style.gap = '10px';
+    row.style.fontSize = '13px';
+
+    const label = document.createElement('div');
+    label.textContent = r.label;
+    label.style.color = 'var(--text-primary)';
+    label.style.fontWeight = '500';
+    label.style.lineHeight = '1.2';
+
+    const track = document.createElement('div');
+    track.style.position = 'relative';
+    track.style.height = '18px';
+    track.style.background = 'var(--gridline)';
+    track.style.borderRadius = '4px';
+    track.style.overflow = 'hidden';
+    track.title = `${r.label}: ${valueFmt(r.pct)}`;
+
+    const center = document.createElement('div');
+    Object.assign(center.style, { position: 'absolute', left: '50%', top: 0, bottom: 0, width: '1px', background: 'var(--baseline)' });
+    track.appendChild(center);
+
+    const bar = document.createElement('div');
+    const halfPct = (Math.abs(r.pct) / maxAbs) * 50;
+    Object.assign(bar.style, {
+      position: 'absolute', top: 0, bottom: 0, width: halfPct + '%', borderRadius: '3px',
+      background: r.pct >= 0 ? 'var(--success)' : 'var(--critical)',
+    });
+    if (r.pct >= 0) bar.style.left = '50%'; else bar.style.right = '50%';
+    track.appendChild(bar);
+
+    const val = document.createElement('div');
+    val.style.textAlign = 'right';
+    val.style.fontVariantNumeric = 'tabular-nums';
+    val.style.color = r.pct >= 0 ? 'var(--success)' : 'var(--critical)';
+    val.textContent = valueFmt(r.pct);
+
+    row.appendChild(label); row.appendChild(track); row.appendChild(val);
+    list.appendChild(row);
+  });
+  container.appendChild(list);
+}
+
+export function filterHistoryByRange(history, rangeKey) {
+  if (!history.length) return history;
+  const lastDate = new Date(history[history.length - 1].date + 'T00:00:00Z');
+  let cutoff;
+  switch (rangeKey) {
+    case '1W': cutoff = new Date(lastDate); cutoff.setUTCDate(cutoff.getUTCDate() - 7); break;
+    case '1M': cutoff = new Date(lastDate); cutoff.setUTCMonth(cutoff.getUTCMonth() - 1); break;
+    case '3M': cutoff = new Date(lastDate); cutoff.setUTCMonth(cutoff.getUTCMonth() - 3); break;
+    case '6M': cutoff = new Date(lastDate); cutoff.setUTCMonth(cutoff.getUTCMonth() - 6); break;
+    case 'YTD': cutoff = new Date(Date.UTC(lastDate.getUTCFullYear(), 0, 1)); break;
+    case '1Y': cutoff = new Date(lastDate); cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 1); break;
+    default: return history; // ALL
+  }
+  const filtered = history.filter((h) => new Date(h.date + 'T00:00:00Z') >= cutoff);
+  return filtered.length ? filtered : history.slice(-1);
+}
+
 function svgEl(tag, attrs) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
