@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portfolio Holdings</title>
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>Portfolio Dashboard</h1>
+    <nav class="nav">
+      <a href="index.html">Overview</a>
+      <a href="income.html">Income</a>
+      <a href="holdings.html" class="active">Holdings</a>
+    </nav>
+  </div>
+
+  <div id="pin-gate">
+    <form id="pin-form">
+      <div style="font-size:14px;color:var(--text-secondary);margin-bottom:4px;">Enter PIN</div>
+      <input id="pin-input" type="password" inputmode="numeric" maxlength="12" autocomplete="off">
+      <button type="submit">Unlock</button>
+      <div class="error" id="pin-error"></div>
+    </form>
+  </div>
+
+  <div id="app">
+    <div class="page">
+      <div class="card">
+        <h2>All Holdings</h2>
+        <p class="muted">Full position-level detail. See the Overview page for the summarized dashboard view.</p>
+        <table id="holdings-table">
+          <thead><tr>
+            <th>Symbol</th><th>Category</th><th>Shares</th><th>Price</th><th>Today $</th><th>Today %</th><th>Value</th>
+            <th>Cost Basis</th><th>Gain/Loss $</th><th>Gain/Loss %</th><th>% of Port.</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="muted" id="footer-note"></p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { getData, fmtMoney, fmtPct, gainClass, sortable } from './assets/app.js';
+
+    const data = await getData();
+    const table = document.getElementById('holdings-table');
+    const rows = data.holdings.filter(h => !h.isCash).map(h => {
+      const gainD = h.currentValue - h.costBasisTotal;
+      const gainP = h.costBasisTotal ? (gainD / h.costBasisTotal) * 100 : null;
+      const pctPort = (h.currentValue / data.totalValue) * 100;
+      const price = h.quantity ? h.currentValue / h.quantity : null;
+      return { symbol: h.symbol, category: h.category, quantity: h.quantity, price, currentValue: h.currentValue,
+        todayGainDollar: h.todayGainDollar, todayGainPercent: h.todayGainPercent,
+        costBasisTotal: h.costBasisTotal, gainD, gainP, pctPort };
+    });
+    sortable(table, rows, r => `
+      <tr>
+        <td>${r.symbol}</td><td>${r.category}</td>
+        <td>${r.quantity?.toLocaleString('en-US', {maximumFractionDigits:2})}</td>
+        <td>${fmtMoney(r.price, {decimals:2})}</td>
+        <td class="${gainClass(r.todayGainDollar)}">${fmtMoney(r.todayGainDollar, {decimals:2})}</td>
+        <td class="${gainClass(r.todayGainPercent)}">${fmtPct(r.todayGainPercent)}</td>
+        <td>${fmtMoney(r.currentValue)}</td>
+        <td>${fmtMoney(r.costBasisTotal)}</td>
+        <td class="${gainClass(r.gainD)}">${fmtMoney(r.gainD)}</td>
+        <td class="${gainClass(r.gainP)}">${fmtPct(r.gainP)}</td>
+        <td>${r.pctPort.toFixed(1)}%</td>
+      </tr>`,
+      'currentValue', ['symbol','category','quantity','price','todayGainDollar','todayGainPercent','currentValue','costBasisTotal','gainD','gainP','pctPort']
+    );
+
+    document.getElementById('footer-note').textContent =
+      `Categories are a first-pass classification — review data/categories.json. Cash-secured puts are tracked on the Income page, not folded into stock gain/loss above.`;
+  </script>
+</body>
+</html>
