@@ -133,6 +133,9 @@ tbody tr:hover { background: var(--gridline); }
 .stackbar { display: flex; height: 28px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
 .stackbar .seg { height: 100%; }
 
+.gauge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.gauge-tile { text-align: center; cursor: default; }
+
 .range-toggle { display: flex; gap: 4px; }
 .range-toggle button {
   font-size: 12px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);

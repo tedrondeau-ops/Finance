@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-20T19:56:20.076Z",
+  "generatedAt": "2026-09-20T20:08:30.970Z",
   "priceRefresh": {
-    "live": 88,
-    "fallback": 0
+    "live": 0,
+    "fallback": 88
   }
 }

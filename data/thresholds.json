@@ -1,0 +1,49 @@
+{
+  "_readme": "Nominal/target values and risk zones for the Portfolio Health gauges. These are starting points based on common diversification/risk guidelines, not your stated goals - edit freely (ask Claude to adjust during a chat session).",
+  "cashPercent": {
+    "note": "This portfolio runs many cash-secured puts, which need cash collateral - so 'cash' here isn't idle, it's largely CSP collateral. Zones are wider than a typical buy-and-hold guideline for that reason.",
+    "peg": 20,
+    "zones": [
+      { "to": 10, "color": "warning" },
+      { "to": 35, "color": "good" },
+      { "to": 100, "color": "warning" }
+    ]
+  },
+  "topPositionPercent": {
+    "note": "Common single-stock concentration guideline: keep any one position under ~10% of the portfolio.",
+    "peg": 10,
+    "zones": [
+      { "to": 10, "color": "good" },
+      { "to": 15, "color": "warning" },
+      { "to": 100, "color": "critical" }
+    ]
+  },
+  "topCategoryPercent": {
+    "note": "Common sector/theme concentration guideline: keep any one theme under ~30% of the portfolio.",
+    "peg": 30,
+    "zones": [
+      { "to": 30, "color": "good" },
+      { "to": 45, "color": "warning" },
+      { "to": 100, "color": "critical" }
+    ]
+  },
+  "incomeYieldPercent": {
+    "note": "Annualized income run-rate as % of total portfolio value. Generic income-portfolio reference range, not a stated personal goal.",
+    "peg": 6,
+    "max": 20,
+    "zones": [
+      { "to": 3, "color": "warning" },
+      { "to": 12, "color": "good" },
+      { "to": 20, "color": "warning" }
+    ]
+  },
+  "assignmentRiskPercent": {
+    "note": "% of open cash-secured puts currently in-the-money (assignment risk). Lower is more comfortable.",
+    "peg": 30,
+    "zones": [
+      { "to": 30, "color": "good" },
+      { "to": 60, "color": "warning" },
+      { "to": 100, "color": "critical" }
+    ]
+  }
+}
