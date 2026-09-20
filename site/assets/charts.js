@@ -39,6 +39,114 @@ export function renderStackedBar(container, segments) {
   container.appendChild(legend);
 }
 
+let gradientCounter = 0;
+
+// Ring/donut chart: composition at a glance, with an exact legend beside it
+// (color alone never carries the value - every segment is also labeled).
+export function renderDonut(container, segments, { size = 220, thickness = 32, centerLabel, centerSub } = {}) {
+  const total = segments.reduce((a, s) => a + s.value, 0) || 1;
+  const r = (size - thickness) / 2;
+  const circumference = 2 * Math.PI * r;
+  const cx = size / 2, cy = size / 2;
+
+  const wrap = document.createElement('div');
+  wrap.style.display = 'flex';
+  wrap.style.flexWrap = 'wrap';
+  wrap.style.alignItems = 'center';
+  wrap.style.gap = '24px';
+
+  const svg = svgEl('svg', { viewBox: `0 0 ${size} ${size}`, width: size, height: size, class: 'svg-chart', style: 'flex-shrink:0' });
+  svg.appendChild(svgEl('circle', { cx, cy, r, fill: 'none', stroke: cssVar('--gridline'), 'stroke-width': thickness }));
+
+  const group = svgEl('g', { transform: `rotate(-90 ${cx} ${cy})` });
+  let offset = 0;
+  segments.forEach((s, i) => {
+    const pct = s.value / total;
+    const len = pct * circumference;
+    const gapPx = segments.length > 1 ? 2 : 0;
+    const circle = svgEl('circle', {
+      cx, cy, r, fill: 'none', stroke: s.color || seriesColor(i), 'stroke-width': thickness,
+      'stroke-dasharray': `${Math.max(len - gapPx, 0)} ${circumference}`,
+      'stroke-dashoffset': -offset,
+    });
+    const title = svgEl('title', {});
+    title.textContent = `${s.label}: $${s.value.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${(pct * 100).toFixed(1)}%)`;
+    circle.appendChild(title);
+    group.appendChild(circle);
+    offset += len;
+  });
+  svg.appendChild(group);
+
+  if (centerLabel) {
+    const t1 = svgEl('text', { x: cx, y: cy - 2, 'text-anchor': 'middle', style: `font-size:20px;font-weight:600;fill:${cssVar('--text-primary')}` });
+    t1.textContent = centerLabel;
+    svg.appendChild(t1);
+  }
+  if (centerSub) {
+    const t2 = svgEl('text', { x: cx, y: cy + 18, 'text-anchor': 'middle', style: `font-size:11px;fill:${cssVar('--text-muted')}` });
+    t2.textContent = centerSub;
+    svg.appendChild(t2);
+  }
+  wrap.appendChild(svg);
+
+  const legend = document.createElement('div');
+  legend.style.display = 'flex';
+  legend.style.flexDirection = 'column';
+  legend.style.gap = '8px';
+  legend.style.fontSize = '13px';
+  segments.forEach((s, i) => {
+    const pct = (s.value / total) * 100;
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = s.color || seriesColor(i);
+    swatch.style.marginRight = '0';
+    row.appendChild(swatch);
+    const text = document.createElement('span');
+    text.style.color = 'var(--text-secondary)';
+    text.innerHTML = `<strong style="color:var(--text-primary)">${s.label}</strong> — $${s.value.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${pct.toFixed(1)}%)`;
+    row.appendChild(text);
+    legend.appendChild(row);
+  });
+  wrap.appendChild(legend);
+  container.appendChild(wrap);
+}
+
+// Semicircular progress gauge - e.g. current value vs. a target.
+export function renderGauge(container, { value, max, valueLabel, subLabel, color }) {
+  const size = 220, cx = size / 2, cy = size / 2 + 10, r = 85, thickness = 20;
+  const pct = max > 0 ? Math.min(value / max, 1) : 0;
+  const halfCirc = Math.PI * r;
+
+  const svg = svgEl('svg', { viewBox: `0 0 ${size} ${size / 2 + 30}`, width: '100%', style: 'max-width:280px', class: 'svg-chart' });
+  const arcPath = (fromDeg, toDeg) => {
+    const rad = (d) => (d * Math.PI) / 180;
+    const x1 = cx + r * Math.cos(rad(fromDeg)), y1 = cy + r * Math.sin(rad(fromDeg));
+    const x2 = cx + r * Math.cos(rad(toDeg)), y2 = cy + r * Math.sin(rad(toDeg));
+    return `M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`;
+  };
+  svg.appendChild(svgEl('path', { d: arcPath(180, 360), fill: 'none', stroke: cssVar('--gridline'), 'stroke-width': thickness, 'stroke-linecap': 'round' }));
+  const progressLen = pct * halfCirc;
+  const fg = svgEl('path', {
+    d: arcPath(180, 360), fill: 'none', stroke: color || cssVar('--series-1'), 'stroke-width': thickness, 'stroke-linecap': 'round',
+    'stroke-dasharray': `${progressLen} ${halfCirc}`,
+  });
+  svg.appendChild(fg);
+
+  const big = svgEl('text', { x: cx, y: cy - 8, 'text-anchor': 'middle', style: `font-size:24px;font-weight:600;fill:${cssVar('--text-primary')}` });
+  big.textContent = valueLabel ?? `${Math.round(pct * 100)}%`;
+  svg.appendChild(big);
+  if (subLabel) {
+    const sub = svgEl('text', { x: cx, y: cy + 14, 'text-anchor': 'middle', style: `font-size:12px;fill:${cssVar('--text-muted')}` });
+    sub.textContent = subLabel;
+    svg.appendChild(sub);
+  }
+  container.appendChild(svg);
+}
+
 function svgEl(tag, attrs) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
@@ -118,8 +226,19 @@ export function renderLineChart(container, points, { height = 220, valueFmt = (v
   }
 
   if (points.length > 1) {
-    const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(p.value)}`).join(' ');
-    svg.appendChild(svgEl('path', { d, fill: 'none', stroke: cssVar('--series-1'), 'stroke-width': 2, 'stroke-linecap': 'round' }));
+    const gradId = `area-grad-${gradientCounter++}`;
+    const defs = svgEl('defs', {});
+    const grad = svgEl('linearGradient', { id: gradId, x1: 0, y1: 0, x2: 0, y2: 1 });
+    const stop1 = svgEl('stop', { offset: '0%', 'stop-color': cssVar('--series-1'), 'stop-opacity': 0.25 });
+    const stop2 = svgEl('stop', { offset: '100%', 'stop-color': cssVar('--series-1'), 'stop-opacity': 0 });
+    grad.appendChild(stop1); grad.appendChild(stop2);
+    defs.appendChild(grad);
+    svg.appendChild(defs);
+
+    const lineD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(p.value)}`).join(' ');
+    const areaD = `${lineD} L ${x(points.length - 1)} ${y(minV)} L ${x(0)} ${y(minV)} Z`;
+    svg.appendChild(svgEl('path', { d: areaD, fill: `url(#${gradId})`, stroke: 'none' }));
+    svg.appendChild(svgEl('path', { d: lineD, fill: 'none', stroke: cssVar('--series-1'), 'stroke-width': 2, 'stroke-linecap': 'round' }));
   }
   points.forEach((p, i) => {
     const c = svgEl('circle', { cx: x(i), cy: y(p.value), r: 4, fill: cssVar('--series-1') });
