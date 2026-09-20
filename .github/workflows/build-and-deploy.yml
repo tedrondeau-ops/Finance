@@ -1,0 +1,58 @@
+name: Rebuild dashboard and deploy to Pages
+
+on:
+  schedule:
+    # 21:30 UTC ≈ 5:30pm ET (4:30pm during EST) — after US market close
+    - cron: '30 21 * * 1-5'
+  push:
+    branches: [main]
+    paths:
+      - 'data/**'
+      - 'scripts/**'
+      - 'site/**'
+      - '.github/workflows/build-and-deploy.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build encrypted data bundle
+        env:
+          DASHBOARD_PIN: ${{ secrets.DASHBOARD_PIN }}
+        run: node scripts/build.mjs
+
+      - name: Commit updated data bundle
+        run: |
+          git config user.name "portfolio-dashboard-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add site/data/bundle.enc.json site/data/meta.json
+          git diff --cached --quiet || git commit -m "Refresh portfolio data ($(date -u +%F))"
+          git push
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

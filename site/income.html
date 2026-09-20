@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portfolio Income</title>
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>Portfolio Dashboard</h1>
+    <nav class="nav">
+      <a href="index.html">Overview</a>
+      <a href="income.html" class="active">Income</a>
+    </nav>
+  </div>
+
+  <div id="pin-gate">
+    <form id="pin-form">
+      <div style="font-size:14px;color:var(--text-secondary);margin-bottom:4px;">Enter PIN</div>
+      <input id="pin-input" type="password" inputmode="numeric" maxlength="12" autocomplete="off">
+      <button type="submit">Unlock</button>
+      <div class="error" id="pin-error"></div>
+    </form>
+  </div>
+
+  <div id="app">
+    <div class="page">
+      <div class="stat-row" id="stat-row"></div>
+      <p class="muted" id="window-note"></p>
+      <div class="callout" id="runrate-callout"></div>
+
+      <div class="card">
+        <h2>Dividends by Month</h2>
+        <div id="div-chart"></div>
+      </div>
+
+      <div class="card">
+        <h2>Dividends by Ticker</h2>
+        <table id="div-table">
+          <thead><tr><th>Symbol</th><th>Category</th><th>Received</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Open Cash-Secured Puts</h2>
+        <p class="muted">Assignment risk compares each strike to the underlying's current price — no live options pricing needed for that.</p>
+        <table id="options-table">
+          <thead><tr><th>Underlying</th><th>Strike</th><th>Expiration</th><th>Contracts</th><th>Current Price</th><th>Status</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Option Premium — Net by Ticker</h2>
+        <table id="premium-table">
+          <thead><tr><th>Underlying</th><th>Net Premium</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Recent Assignments</h2>
+        <table id="assign-table">
+          <thead><tr><th>Date</th><th>Symbol</th><th>Action</th><th>Amount</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { getData, fmtMoney, fmtPct, gainClass, sortable } from './assets/app.js';
+    import { renderBarChart } from './assets/charts.js';
+
+    const data = await getData();
+    const inc = data.income;
+    const trailingIncome = inc.dividends.total + inc.optionPremium.total + inc.returnOfCapital.total + inc.interest.total;
+
+    const from = new Date(inc.window.from), to = new Date(inc.window.to);
+    const days = Math.max(1, Math.round((to - from) / 86400000) + 1);
+    const runRate = trailingIncome * (365 / days);
+
+    document.getElementById('stat-row').innerHTML = `
+      <div class="stat-tile"><div class="label">Dividends Received</div><div class="value pos">${fmtMoney(inc.dividends.total)}</div></div>
+      <div class="stat-tile"><div class="label">Option Premium (net)</div><div class="value pos">${fmtMoney(inc.optionPremium.total)}</div></div>
+      <div class="stat-tile"><div class="label">Return of Capital</div><div class="value">${fmtMoney(inc.returnOfCapital.total)}</div></div>
+      <div class="stat-tile"><div class="label">Total Generated</div><div class="value pos">${fmtMoney(trailingIncome)}</div></div>
+      <div class="stat-tile"><div class="label">Annualized Run-Rate</div><div class="value">${fmtMoney(runRate)}/yr</div></div>
+    `;
+    document.getElementById('window-note').textContent = `Based on transaction history from ${inc.window.from} to ${inc.window.to} (${days} days).`;
+    document.getElementById('runrate-callout').textContent = days < 300
+      ? `Run-rate is a rough extrapolation from ${days} days of history, not a real trailing-twelve-month figure — dividend timing is lumpy (quarterly payers won't all show up in a short window), so treat this as directional, not exact.`
+      : `Run-rate is based on close to a full year of history.`;
+
+    const monthKeys = Object.keys(inc.dividends.byMonth).sort();
+    renderBarChart(document.getElementById('div-chart'),
+      monthKeys.map(m => ({ label: m.slice(2), value: inc.dividends.byMonth[m] })),
+      { valueFmt: v => '$' + Math.round(v) });
+
+    const catByTicker = {};
+    data.holdings.forEach(h => { catByTicker[h.symbol] = h.category; });
+
+    const divRows = Object.entries(inc.dividends.byTicker).map(([symbol, amount]) => ({ symbol, category: catByTicker[symbol] || '—', amount }));
+    sortable(document.getElementById('div-table'), divRows, r => `<tr><td>${r.symbol}</td><td>${r.category}</td><td>${fmtMoney(r.amount, {decimals:2})}</td></tr>`, 'amount', ['symbol','category','amount']);
+
+    const priceByTicker = {};
+    data.holdings.forEach(h => { priceByTicker[h.symbol] = h.quantity ? h.currentValue / h.quantity : null; });
+    const openOptions = data.options.filter(o => o.direction === 'short');
+    const optRows = openOptions.map(o => {
+      const price = priceByTicker[o.underlying];
+      let status = '—';
+      if (price != null) {
+        if (o.type === 'put') status = price < o.strike ? 'ITM (assignment risk)' : 'OTM';
+        else status = price > o.strike ? 'ITM (assignment risk)' : 'OTM';
+      }
+      return { underlying: o.underlying, strike: o.strike, expiration: o.expiration, contracts: Math.abs(o.contracts), price, status };
+    });
+    sortable(document.getElementById('options-table'), optRows, r => `
+      <tr><td>${r.underlying}</td><td>${fmtMoney(r.strike, {decimals:2})}</td><td>${r.expiration}</td><td>${r.contracts}</td>
+      <td>${fmtMoney(r.price, {decimals:2})}</td><td class="${r.status.startsWith('ITM') ? 'neg' : 'pos'}">${r.status}</td></tr>`,
+      'expiration', ['underlying','strike','expiration','contracts','price','status']);
+
+    const premRows = Object.entries(inc.optionPremium.byTicker).map(([underlying, amount]) => ({ underlying, amount }));
+    sortable(document.getElementById('premium-table'), premRows, r => `<tr><td>${r.underlying}</td><td class="${gainClass(r.amount)}">${fmtMoney(r.amount, {decimals:2})}</td></tr>`, 'amount', ['underlying','amount']);
+
+    const assignRows = [...inc.assignments].sort((a,b) => b.date.localeCompare(a.date));
+    document.getElementById('assign-table').querySelector('tbody').innerHTML = assignRows.map(a =>
+      `<tr><td>${a.date}</td><td>${a.symbol}</td><td style="text-align:left;">${a.action}</td><td>${fmtMoney(a.amount, {decimals:2})}</td></tr>`
+    ).join('');
+  </script>
+</body>
+</html>

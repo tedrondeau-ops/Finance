@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portfolio Overview</title>
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>Portfolio Dashboard</h1>
+    <nav class="nav">
+      <a href="index.html" class="active">Overview</a>
+      <a href="income.html">Income</a>
+    </nav>
+  </div>
+
+  <div id="pin-gate">
+    <form id="pin-form">
+      <div style="font-size:14px;color:var(--text-secondary);margin-bottom:4px;">Enter PIN</div>
+      <input id="pin-input" type="password" inputmode="numeric" maxlength="12" autocomplete="off">
+      <button type="submit">Unlock</button>
+      <div class="error" id="pin-error"></div>
+    </form>
+  </div>
+
+  <div id="app">
+    <div class="page">
+      <div class="stat-row" id="stat-row"></div>
+
+      <div class="card">
+        <h2>Allocation by Category</h2>
+        <div id="allocation"></div>
+      </div>
+
+      <div class="card">
+        <h2>Value Over Time</h2>
+        <div id="history-chart"></div>
+        <p class="muted" id="history-note"></p>
+      </div>
+
+      <div class="card">
+        <h2>Portfolio Plan</h2>
+        <div class="plan-notes" id="plan-notes"></div>
+      </div>
+
+      <div class="card">
+        <h2>Holdings</h2>
+        <table id="holdings-table">
+          <thead><tr>
+            <th>Symbol</th><th>Category</th><th>Shares</th><th>Price</th><th>Value</th>
+            <th>Cost Basis</th><th>Gain/Loss $</th><th>Gain/Loss %</th><th>% of Port.</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <p class="muted" id="footer-note"></p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { getData, fmtMoney, fmtPct, gainClass, sortable } from './assets/app.js';
+    import { renderStackedBar, renderLineChart, seriesColor } from './assets/charts.js';
+
+    const CATEGORY_ORDER = ['Cash','Income & Dividend','Energy','Nuclear & Power','AI & Data Infrastructure','Biotech & Pharma','Materials & Industrial','Digital Assets','Mobility','Uncategorized'];
+    function colorForCategory(name) {
+      const idx = CATEGORY_ORDER.indexOf(name);
+      return (idx >= 0 && idx < 8) ? seriesColor(idx) : getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
+    }
+
+    const data = await getData();
+
+    const totalGainDollar = data.totalStockValue - data.totalStockCostBasis;
+    const totalGainPct = data.totalStockCostBasis ? (totalGainDollar / data.totalStockCostBasis) * 100 : null;
+    const trailingIncome = data.income.dividends.total + data.income.optionPremium.total + data.income.returnOfCapital.total + data.income.interest.total;
+
+    const statRow = document.getElementById('stat-row');
+    statRow.innerHTML = `
+      <div class="stat-tile"><div class="label">Total Portfolio Value</div><div class="value">${fmtMoney(data.totalValue)}</div><div class="sub">${data.accounts.length} accounts</div></div>
+      <div class="stat-tile"><div class="label">Stock Gain/Loss</div><div class="value ${gainClass(totalGainDollar)}">${fmtMoney(totalGainDollar)}</div><div class="sub ${gainClass(totalGainDollar)}">${fmtPct(totalGainPct)} vs. cost basis</div></div>
+      <div class="stat-tile"><div class="label">Trailing Income Generated</div><div class="value pos">${fmtMoney(trailingIncome)}</div><div class="sub">dividends + option premium + RoC + interest</div></div>
+      <div class="stat-tile"><div class="label">Data As Of</div><div class="value" style="font-size:16px;">${new Date(data.generatedAt).toLocaleString()}</div><div class="sub">${data.priceRefresh.live} live / ${data.priceRefresh.fallback} last-known prices</div></div>
+    `;
+
+    const catEntries = Object.entries(data.categoryTotals).filter(([,v]) => v > 0.5).sort((a,b) => CATEGORY_ORDER.indexOf(a[0]) - CATEGORY_ORDER.indexOf(b[0]));
+    const segments = catEntries.map(([label, value]) => ({ label, value, color: colorForCategory(label) }));
+    renderStackedBar(document.getElementById('allocation'), segments);
+
+    const histContainer = document.getElementById('history-chart');
+    const histPoints = data.history.map(h => ({ date: h.date, value: h.totalValue }));
+    renderLineChart(histContainer, histPoints, { valueFmt: v => '$' + Math.round(v).toLocaleString('en-US'), goal: data.plan.targetValue || undefined });
+    document.getElementById('history-note').textContent = histPoints.length < 5
+      ? `Only ${histPoints.length} snapshot(s) so far — the trend line fills in as the daily rebuild runs.`
+      : `${histPoints.length} daily snapshots.`;
+
+    const planEl = document.getElementById('plan-notes');
+    const planMeta = [];
+    if (data.plan.targetValue) planMeta.push(`Target: ${fmtMoney(data.plan.targetValue)}${data.plan.targetDate ? ' by ' + data.plan.targetDate : ''}`);
+    planEl.innerHTML = (planMeta.length ? `<p><strong>${planMeta.join(' · ')}</strong></p>` : '') +
+      `<ul>${data.plan.notes.map(n => `<li>${n}</li>`).join('')}</ul>` +
+      `<p class="muted">Last updated ${data.plan.updated}</p>`;
+
+    const table = document.getElementById('holdings-table');
+    const rows = data.holdings.filter(h => !h.isCash).map(h => {
+      const gainD = h.currentValue - h.costBasisTotal;
+      const gainP = h.costBasisTotal ? (gainD / h.costBasisTotal) * 100 : null;
+      const pctPort = (h.currentValue / data.totalValue) * 100;
+      const price = h.quantity ? h.currentValue / h.quantity : null;
+      return { symbol: h.symbol, category: h.category, quantity: h.quantity, price, currentValue: h.currentValue, costBasisTotal: h.costBasisTotal, gainD, gainP, pctPort };
+    });
+    sortable(table, rows, r => `
+      <tr>
+        <td>${r.symbol}</td><td>${r.category}</td>
+        <td>${r.quantity?.toLocaleString('en-US', {maximumFractionDigits:2})}</td>
+        <td>${fmtMoney(r.price, {decimals:2})}</td>
+        <td>${fmtMoney(r.currentValue)}</td>
+        <td>${fmtMoney(r.costBasisTotal)}</td>
+        <td class="${gainClass(r.gainD)}">${fmtMoney(r.gainD)}</td>
+        <td class="${gainClass(r.gainP)}">${fmtPct(r.gainP)}</td>
+        <td>${r.pctPort.toFixed(1)}%</td>
+      </tr>`,
+      'currentValue', ['symbol','category','quantity','price','currentValue','costBasisTotal','gainD','gainP','pctPort']
+    );
+
+    document.getElementById('footer-note').textContent =
+      `Categories are a first-pass classification — review data/categories.json. Cash-secured puts are tracked on the Income page, not folded into stock gain/loss above.`;
+  </script>
+</body>
+</html>

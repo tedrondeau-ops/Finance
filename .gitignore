@@ -1,0 +1,7 @@
+# Plaintext financial data must never be committed - only the *.enc.json
+# versions (see scripts/encrypt-source.mjs) are tracked.
+/data/positions_raw.csv
+/data/transactions_raw.csv
+/data/plan.json
+
+node_modules/
